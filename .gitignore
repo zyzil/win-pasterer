@@ -1,0 +1,16 @@
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Generated resource objects
+cmd/win-pasterer/rsrc_windows_*.syso
+
+# Go artifacts
+*.test
+*.out
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
