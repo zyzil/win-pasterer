@@ -1,21 +1,25 @@
 # win-pasterer
 
-A lightweight Windows tray utility written in Go that intercepts `Ctrl+V` and, for configured target apps (default `alacritty.exe`), normalizes clipboard text line endings from CRLF to LF before paste.
+A lightweight Windows tray utility written in Go that intercepts `Ctrl+Shift+V` and, for configured target apps (default `alacritty.exe`), normalizes clipboard text line endings from CRLF to LF before paste.
+
+> **Disclaimer:** This is a vibe-coded personal utility that hooks keyboard input and rewrites clipboard contents. Use it at your own risk, review the code before running it, and test it with your workflow before relying on it.
 
 ## Features
 
-- Global low-level keyboard hook (`WH_KEYBOARD_LL`) for `Ctrl+V`
+- Global low-level keyboard hook (`WH_KEYBOARD_LL`) for `Ctrl+Shift+V`
 - Foreground process filtering by image name (case-insensitive)
 - Clipboard normalization for `CF_UNICODETEXT` only (`\r\n` -> `\n`)
 - Tray icon with menu:
   - `Enabled` toggle
-  - `Settings`
+  - `Settings...`
+  - `Hotkey: Ctrl+Shift+V`
   - `Exit`
-- Settings dialog for monitored executable list
+- Settings dialog for monitored executable list, app enabled state, and startup preference
 - `Run at startup` option (per-user `HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run`)
 - Embedded icon + manifest resources via `go-winres`
 - Modern Windows visual styles enabled (`use-common-controls-v6`)
 - DPI awareness enabled in manifest (`per monitor v2`) with runtime DPI-scaled settings layout
+- Settings dialog follows Windows light/dark app theme where raw Win32 controls can be themed reliably
 
 ## Project Layout
 
@@ -27,8 +31,9 @@ A lightweight Windows tray utility written in Go that intercepts `Ctrl+V` and, f
 - [internal/platform/startup/registry_windows.go](internal/platform/startup/registry_windows.go): startup registry integration
 - [internal/platform/windowsapi/input_clipboard_windows.go](internal/platform/windowsapi/input_clipboard_windows.go): WinAPI process/clipboard helpers
 - [winres/winres.json](winres/winres.json): icon + manifest resource config
+- [VERSION](VERSION): four-part Windows version used by release builds
 - [build.ps1](build.ps1): release-oriented Windows build script
-- [scripts/generate_icons.ps1](scripts/generate_icons.ps1): placeholder icon generation
+- [scripts/generate_icons.ps1](scripts/generate_icons.ps1): PNG icon generation from [icon.ico](icon.ico)
 
 ## Requirements
 
@@ -51,7 +56,14 @@ go run ./cmd/win-pasterer
 This will:
 
 1. Generate `.syso` resources from [winres/winres.json](winres/winres.json)
-2. Build `win-pasterer.exe` from `./cmd/win-pasterer`
+2. Apply the version from [VERSION](VERSION) to the Windows resources and Go build metadata
+3. Build a GUI-subsystem `win-pasterer.exe` from `./cmd/win-pasterer`
+
+To override the version for a one-off build:
+
+```powershell
+./build.ps1 -Clean -Version 0.1.1.0
+```
 
 ## Tests
 
@@ -87,6 +99,19 @@ Optional integration pass:
 ./scripts/verify.ps1 -IncludeIntegration
 ```
 
+## Versioning and Release Build
+
+Windows resources use a four-part version number (`major.minor.patch.build`). The checked-in version source is [VERSION](VERSION), and [build.ps1](build.ps1) passes that value to `go-winres` as both file version and product version.
+
+To prepare a new version:
+
+1. Update [VERSION](VERSION), for example `0.1.1.0`
+2. Update the manifest identity version in [winres/winres.json](winres/winres.json) to match
+3. Run `./scripts/verify.ps1 -IncludeIntegration`
+4. Run `./build.ps1 -Clean`
+5. Test the resulting `win-pasterer.exe` manually from the tray and settings dialog
+6. Commit the version change and create a matching git tag, for example `v0.1.1`
+
 ## Configuration
 
 Runtime config is stored at:
@@ -107,17 +132,25 @@ Schema:
 
 - App opts into modern visual styles via manifest (`comctl32 v6`)
 - App opts into per-monitor-v2 DPI awareness via manifest
-- Settings dialog creation now scales control/window coordinates based on current monitor DPI
+- Settings dialog uses Segoe UI, tab navigation, centered placement, and DPI-scaled layout including `WM_DPICHANGED` relayout
+- Settings window frame uses documented DWM immersive dark mode where available
+- Tray context menu uses the native Windows menu; fully custom dark tray menus are out of scope
 
 ## Security and Safety Notes
 
 - Unsafe pointer usage is intentionally isolated to WinAPI-boundary code paths.
 - Clipboard processing is limited to `CF_UNICODETEXT`.
+- Clipboard reads are bounded by the source `HGLOBAL` size and an app-level maximum before scanning UTF-16 text.
 - Hook path returns quickly and fails open (passes to next hook) on parse/lookup errors.
+- The app runs as invoker and uses per-user startup registration only.
 - Elevated target applications may still require running this app elevated for consistent behavior across integrity levels.
 
 ## Known Limitations
 
 - Clipboard conversion currently targets only Unicode text format.
-- Dynamic control re-layout after live monitor-DPI switches is currently limited (dialog is DPI-scaled at creation time).
+- Clipboard conversion keeps normalized Unicode text on the clipboard and does not preserve other clipboard formats when conversion occurs.
 - `go vet` may emit warnings around unavoidable Win32 `uintptr`/`unsafe.Pointer` interop in callback/syscall boundaries.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

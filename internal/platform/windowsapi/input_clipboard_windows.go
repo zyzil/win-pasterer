@@ -13,6 +13,8 @@ import (
 
 const (
 	vkControl = 0x11
+	vkShift   = 0x10
+	vkMenu    = 0x12
 	maxVKCode = 0xFE
 
 	cfUnicodeText = 13
@@ -30,6 +32,7 @@ const (
 	errGlobalAllocFailed   = "GlobalAlloc failed"
 	errGlobalLockFailed    = "GlobalLock failed"
 	errSetClipboardFailed  = "SetClipboardData failed"
+	errInvalidGlobalSize   = "invalid clipboard global memory size"
 	errNilGlobalMemoryPtr  = "nil global memory pointer"
 	errInvalidMaxUnits     = "invalid max units"
 	errClipboardUnterm     = "clipboard text is not null-terminated within limit"
@@ -51,6 +54,7 @@ var (
 
 	procGlobalLock                 = kernel32.NewProc("GlobalLock")
 	procGlobalUnlock               = kernel32.NewProc("GlobalUnlock")
+	procGlobalSize                 = kernel32.NewProc("GlobalSize")
 	procGlobalAlloc                = kernel32.NewProc("GlobalAlloc")
 	procGlobalFree                 = kernel32.NewProc("GlobalFree")
 	procOpenProcess                = kernel32.NewProc("OpenProcess")
@@ -58,8 +62,16 @@ var (
 	procQueryFullProcessImageNameW = kernel32.NewProc("QueryFullProcessImageNameW")
 )
 
-func IsCtrlPressed() bool {
-	ret, _, _ := procGetAsyncKeyState.Call(uintptr(vkControl))
+func ModifierState() core.ModifierState {
+	return core.ModifierState{
+		Ctrl:  isKeyPressed(vkControl),
+		Shift: isKeyPressed(vkShift),
+		Alt:   isKeyPressed(vkMenu),
+	}
+}
+
+func isKeyPressed(vk int) bool {
+	ret, _, _ := procGetAsyncKeyState.Call(uintptr(vk))
 	return (uint16(ret) & 0x8000) != 0
 }
 
@@ -148,12 +160,17 @@ func readClipboardUnicodeText() (string, error) {
 		return "", nil
 	}
 
+	maxUnits, err := clipboardUTF16UnitLimit(hData, core.MaxClipboardUTF16Units)
+	if err != nil {
+		return "", err
+	}
+
 	pData, _, _ := procGlobalLock.Call(hData)
 	if pData == 0 {
 		return "", nil
 	}
 
-	text, err := safeUTF16FromGlobalMemory(pData, core.MaxClipboardUTF16Units)
+	text, err := safeUTF16FromGlobalMemory(pData, maxUnits)
 	procGlobalUnlock.Call(hData)
 	if err != nil {
 		return "", err
@@ -207,6 +224,23 @@ func openClipboardWithRetry(maxAttempts int) bool {
 	return false
 }
 
+func clipboardUTF16UnitLimit(hData uintptr, appMaxUnits int) (int, error) {
+	if appMaxUnits <= 0 {
+		return 0, fmt.Errorf(errInvalidMaxUnits)
+	}
+	sizeBytes, _, _ := procGlobalSize.Call(hData)
+	if sizeBytes < 2 {
+		return 0, fmt.Errorf(errInvalidGlobalSize)
+	}
+	units := sizeBytes / 2
+	if units > uintptr(appMaxUnits) {
+		return appMaxUnits, nil
+	}
+	return int(units), nil
+}
+
+// safeUTF16FromGlobalMemory scans only maxUnits UTF-16 code units. Callers
+// must derive that bound from GlobalSize before locking clipboard memory.
 func safeUTF16FromGlobalMemory(ptr uintptr, maxUnits int) (string, error) {
 	if ptr == 0 {
 		return "", fmt.Errorf(errNilGlobalMemoryPtr)

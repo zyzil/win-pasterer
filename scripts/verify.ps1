@@ -24,6 +24,7 @@ if ($IncludeIntegration) {
 }
 
 Write-Host "Building app..."
-go build ./cmd/win-pasterer
+./build.ps1 -Output "win-pasterer.verify.exe" -Clean
+Remove-Item -Path "win-pasterer.verify.exe", "win-pasterer.verify.exe~" -Force -ErrorAction SilentlyContinue
 
 Write-Host "Verification complete."

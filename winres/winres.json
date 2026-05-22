@@ -1,7 +1,7 @@
 {
   "RT_GROUP_ICON": {
     "APP": {
-      "0000": ["icon_16.png", "icon_32.png", "icon_48.png", "icon_64.png"]
+      "0000": ["icon_16.png", "icon_32.png", "icon_48.png", "icon_64.png", "icon_128.png", "icon_256.png"]
     }
   },
   "RT_MANIFEST": {
@@ -9,7 +9,7 @@
       "0409": {
         "identity": {
           "name": "win-pasterer",
-          "version": "1.0.0.0"
+          "version": "0.1.0.0"
         },
         "description": "Win Pasterer",
         "minimum-os": "win7",

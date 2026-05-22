@@ -1,6 +1,9 @@
 package core
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 const MaxClipboardUTF16Units = 5_000_000
 
@@ -9,6 +12,19 @@ type Config struct {
 	Processes    []string `json:"processes"`
 	RunAtStartup bool     `json:"runAtStartup"`
 }
+
+type ModifierState struct {
+	Ctrl  bool
+	Shift bool
+	Alt   bool
+}
+
+type KeyEvent struct {
+	VKCode    uint32
+	Modifiers ModifierState
+}
+
+const VKV uint32 = 0x56
 
 func DefaultConfig() Config {
 	return Config{Enabled: true, Processes: []string{"alacritty.exe"}, RunAtStartup: false}
@@ -34,6 +50,7 @@ func NormalizeProcesses(in []string) []string {
 	if len(out) == 0 {
 		return DefaultConfig().Processes
 	}
+	sort.Strings(out)
 	return out
 }
 
@@ -53,6 +70,7 @@ func FromProcessSet(set map[string]struct{}) []string {
 	if len(out) == 0 {
 		return DefaultConfig().Processes
 	}
+	sort.Strings(out)
 	return out
 }
 
@@ -63,4 +81,23 @@ func ConvertCRLFToLF(text string) string {
 func ParseProcessEditorInput(text string) []string {
 	normalized := strings.ReplaceAll(text, "\r\n", "\n")
 	return NormalizeProcesses(strings.Split(normalized, "\n"))
+}
+
+func IsPasteHotkey(event KeyEvent) bool {
+	return event.VKCode == VKV &&
+		event.Modifiers.Ctrl &&
+		event.Modifiers.Shift &&
+		!event.Modifiers.Alt
+}
+
+func ShouldNormalizePaste(enabled bool, processName string, monitored map[string]struct{}, event KeyEvent) bool {
+	if !enabled || !IsPasteHotkey(event) {
+		return false
+	}
+	return IsProcessMonitored(processName, monitored)
+}
+
+func IsProcessMonitored(processName string, monitored map[string]struct{}) bool {
+	_, ok := monitored[strings.ToLower(strings.TrimSpace(processName))]
+	return ok
 }
