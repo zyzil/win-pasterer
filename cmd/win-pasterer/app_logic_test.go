@@ -147,6 +147,15 @@ func TestIsTrayContextMenuEvent(t *testing.T) {
 	}
 }
 
+func TestTrayTooltipTextIncludesEnabledState(t *testing.T) {
+	if got := trayTooltipText(true); got != "win-pasterer: enabled" {
+		t.Fatalf("enabled tooltip = %q", got)
+	}
+	if got := trayTooltipText(false); got != "win-pasterer: disabled" {
+		t.Fatalf("disabled tooltip = %q", got)
+	}
+}
+
 func TestSettingsThemeForMode(t *testing.T) {
 	light := settingsThemeForMode(false)
 	if light.dark || light.windowColor != rgb(240, 240, 240) || light.controlColor != rgb(255, 255, 255) || light.textColor != rgb(0, 0, 0) {
