@@ -93,12 +93,14 @@ const (
 
 	// Tray icon flags.
 	nimAdd             = 0x00000000
+	nimModify          = 0x00000001
 	nimDelete          = 0x00000002
 	nimSetVersion      = 0x00000004
 	nifMessage         = 0x00000001
 	nifIcon            = 0x00000002
 	nifTip             = 0x00000004
 	nifGuid            = 0x00000020
+	nifShowTip         = 0x00000080
 	notifyIconVersion4 = 4
 
 	// Misc constants.
@@ -514,13 +516,12 @@ func (a *app) addTrayIcon() error {
 	nid.CbSize = uint32(unsafe.Sizeof(nid))
 	nid.HWnd = a.hwnd
 	nid.UID = 1
-	nid.UFlags = nifMessage | nifIcon | nifTip | nifGuid
+	nid.UFlags = nifMessage | nifIcon | nifTip | nifGuid | nifShowTip
 	nid.UCallbackMessage = wmTrayIcon
 	nid.HIcon = hIcon
 	nid.GuidItem = trayIconGUID
 
-	tip := windows.StringToUTF16(trayTipText)
-	copy(nid.SzTip[:], tip)
+	setNotifyIconTip(&nid, trayTooltipText(a.isEnabled()))
 
 	ret, _, err := procShellNotifyIconW.Call(nimAdd, uintptr(unsafe.Pointer(&nid)))
 	if ret == 0 {
@@ -529,6 +530,36 @@ func (a *app) addTrayIcon() error {
 	nid.UTimeoutOrVersion = notifyIconVersion4
 	procShellNotifyIconW.Call(nimSetVersion, uintptr(unsafe.Pointer(&nid)))
 	return nil
+}
+
+func (a *app) updateTrayTooltip() {
+	if a.hwnd == 0 {
+		return
+	}
+	nid := notifyIconDataW{}
+	nid.CbSize = uint32(unsafe.Sizeof(nid))
+	nid.HWnd = a.hwnd
+	nid.UID = 1
+	nid.UFlags = nifTip | nifGuid | nifShowTip
+	nid.GuidItem = trayIconGUID
+	setNotifyIconTip(&nid, trayTooltipText(a.isEnabled()))
+	procShellNotifyIconW.Call(nimModify, uintptr(unsafe.Pointer(&nid)))
+}
+
+func trayTooltipText(enabled bool) string {
+	state := "disabled"
+	if enabled {
+		state = "enabled"
+	}
+	return fmt.Sprintf("%s: %s", trayTipText, state)
+}
+
+func setNotifyIconTip(nid *notifyIconDataW, text string) {
+	if nid == nil {
+		return
+	}
+	tip := windows.StringToUTF16(text)
+	copy(nid.SzTip[:], tip)
 }
 
 func loadAppIconHandle(size int32) uintptr {
@@ -641,6 +672,7 @@ func (a *app) setEnabled(v bool) {
 	a.mu.Unlock()
 
 	_ = a.saveConfig(cfg)
+	a.updateTrayTooltip()
 }
 
 func (a *app) shouldMonitor(processName string) bool {
@@ -679,7 +711,11 @@ func (a *app) applySettings(enabled bool, processes []string, runAtStartup bool)
 	cfg := core.Config{Enabled: a.enabled, Processes: normalized, RunAtStartup: runAtStartup}
 	a.mu.Unlock()
 
-	return a.saveConfig(cfg)
+	if err := a.saveConfig(cfg); err != nil {
+		return err
+	}
+	a.updateTrayTooltip()
+	return nil
 }
 
 func (a *app) saveConfig(cfg core.Config) error {
